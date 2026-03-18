@@ -1,5 +1,4 @@
 import { motion } from "framer-motion";
-import { Link } from "react-router-dom";
 import { ShieldCheck, ArrowRight } from "lucide-react";
 import SecurityDots from "./SecurityDots";
 
@@ -53,23 +52,18 @@ export default function AuthLayout({ children, desktopImage, mobileImage, quote,
 
           {/* Logo & Back button - Fixed at top */}
           <div className="absolute top-6 left-6 right-6 lg:top-[60px] lg:left-[60px] lg:right-[60px] z-10 flex items-center justify-between">
-            <div className="flex items-center gap-2 sm:gap-2.5">
-              <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-lg bg-[var(--color-accent)] flex items-center justify-center shadow-[0_0_20px_var(--color-accent-glow)]">
-                <ShieldCheck className="w-4 h-4 sm:w-5 sm:h-5 text-[#020617]" strokeWidth={2.5} />
-              </div>
-              <span className="text-[18px] sm:text-[20px] font-extrabold text-[var(--color-text-primary)] tracking-tight font-dashboard">
-                TekverAI
-              </span>
+            <div className="">
+              <img src="/LogoNew.png" alt="Logo" className="w-auto h-8 object-center object-cover" />
             </div>
             
-            <Link 
-              to="/" 
+            <a 
+              href="https://tekverai.com/" 
               className="px-3 py-1.5 sm:px-4 sm:py-2 bg-[rgba(255,255,255,0.05)] backdrop-blur-md rounded-full border border-[var(--color-border-subtle)] text-[var(--color-text-primary)] text-[12px] sm:text-[13px] font-semibold no-underline flex items-center gap-2 transition-all font-dashboard hover:bg-[rgba(255,255,255,0.1)]"
             >
               <span className="hidden sm:inline">Back to website</span>
               <span className="sm:hidden">Back</span>
               <ArrowRight size={14} />
-            </Link>
+            </a>
           </div>
 
           <div className="mt-auto relative z-10 hidden lg:block">

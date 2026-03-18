@@ -172,7 +172,7 @@ export default function SignUp() {
           <div style={{ display: "flex", alignItems: "center", gap: "10px", margin: "4px 0" }}>
              <input type="checkbox" id="terms" required style={{ accentColor: "var(--color-accent)" }} />
              <label htmlFor="terms" style={{ color: "var(--color-text-secondary)", fontSize: "13px" }}>
-               I agree to the <Link to="#" style={{ color: "var(--color-accent)", textDecoration: "none" }}>Terms & Conditions</Link>
+               I agree to the Terms & Conditions
              </label>
           </div>
 

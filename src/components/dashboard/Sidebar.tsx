@@ -90,36 +90,8 @@ export default function Sidebar({
       >
         <Link
           to="/"
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: "10px",
-            textDecoration: "none",
-          }}
         >
-          <div
-            style={{
-              width: "32px",
-              height: "32px",
-              borderRadius: "8px",
-              background: "var(--color-accent)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            <ShieldCheck size={18} style={{ color: "#020617" }} strokeWidth={2.5} />
-          </div>
-          <span
-            style={{
-              fontSize: "16px",
-              fontWeight: "700",
-              color: "var(--color-text-primary)",
-              fontFamily: "var(--font-dashboard)",
-            }}
-          >
-            Tekver<span style={{ color: "var(--color-accent)" }}>AI</span>
-          </span>
+          <img src="/LogoNew.png" alt="logo" className="w-auto h-8 object-center object-cover" />
         </Link>
         <button
           onClick={onClose}

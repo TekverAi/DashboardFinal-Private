@@ -16,13 +16,16 @@ import {
   X,
   Cpu,
   Bot,
-  Link as LinkIcon
+  Link as LinkIcon,
+  Play
 } from "lucide-react";
 
 const navItems = [
   { label: "Overview", href: "/dashboard", icon: LayoutDashboard },
   { label: "Repositories", href: "/dashboard/repositories", icon: GitBranch },
+  { label: "Live Preview", href: "/dashboard/live-preview", icon: Play },
   { label: "Verifications", href: "/dashboard/verifications", icon: ShieldCheck },
+
   { label: "Security", href: "/dashboard/security", icon: FileText },
   { label: "Reports", href: "/dashboard/reports", icon: FileText },
   { label: "System Status", href: "/dashboard/system-status", icon: Activity },

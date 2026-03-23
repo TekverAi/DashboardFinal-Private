@@ -13,6 +13,10 @@ import Verifications from "@/pages/dashboard/Verifications";
 import SignIn from "@/pages/auth/SignIn";
 import SignUp from "@/pages/auth/SignUp";
 import AIModels from "@/pages/dashboard/AIModels";
+import LivePreview from "@/pages/dashboard/LivePreview";
+import ScrollToTop from "@/components/common/ScrollToTop";
+
+
 
 function ProtectedRoute() {
   const { user, loading } = useAuth();
@@ -76,7 +80,10 @@ function App() {
   const { user } = useAuth();
 
   return (
-    <Routes>
+    <>
+      <ScrollToTop />
+      <Routes>
+
       {/* Auth Routes */}
       <Route path="/login" element={user ? <Navigate to="/dashboard" replace /> : <SignIn />} />
       <Route path="/signup" element={user ? <Navigate to="/dashboard" replace /> : <SignUp />} />
@@ -92,14 +99,18 @@ function App() {
           <Route path="system-status" element={<SystemStatus />} />
           <Route path="verifications" element={<Verifications />} />
           <Route path="ai-fleet" element={<AIModels />} />
+          <Route path="live-preview" element={<LivePreview />} />
+
         </Route>
       </Route>
 
       {/* Redirect all other routes */}
       <Route path="/" element={<Navigate to="/dashboard" replace />} />
       <Route path="*" element={<Navigate to="/dashboard" replace />} />
-    </Routes>
+      </Routes>
+    </>
   );
 }
+
 
 export default App;

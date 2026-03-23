@@ -16,8 +16,14 @@ interface ReviewResult {
   score: number;
   issues: Issue[];
   recommendations: string[];
+  source?: "groq-api" | "fallback-local";
   error?: string;
 }
+
+type RawReviewResult = Partial<ReviewResult> & {
+  issues?: Array<Partial<Issue>>;
+  recommendations?: unknown;
+};
 
 /* ─── Helpers ────────────────────────────────────────────────────────────── */
 const SEVERITY_CONFIG = {
@@ -182,7 +188,7 @@ function ResultsPanel({ result }: { result: ReviewResult }) {
               {result.language.toUpperCase()}
             </span>
             <span style={{ fontSize: "10px", fontWeight: "700", color: "var(--color-text-muted)", border: "1px solid var(--color-border-subtle)", background: "rgba(255,255,255,0.03)", padding: "2px 10px", borderRadius: "99px" }}>
-              AUTO_SCAN_V2
+              {result.source === "groq-api" ? "GROQ_API" : "LOCAL_FALLBACK"}
             </span>
         </div>
       </div>
@@ -271,6 +277,153 @@ function findLine(code: string, pattern: RegExp): number | null {
   return null;
 }
 
+function clampScore(value: unknown): number {
+  const numeric = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(numeric)) return 0;
+  return Math.max(0, Math.min(100, Math.round(numeric)));
+}
+
+function detectBracketMismatch(code: string): string | null {
+  const stack: string[] = [];
+  const pairs: Record<string, string> = { "(": ")", "[": "]", "{": "}" };
+  const closing = new Set(Object.values(pairs));
+  const opening = new Set(Object.keys(pairs));
+
+  for (const char of code) {
+    if (opening.has(char)) {
+      stack.push(char);
+      continue;
+    }
+    if (closing.has(char)) {
+      const last = stack.pop();
+      if (!last || pairs[last] !== char) {
+        return `Mismatched or unexpected '${char}' bracket.`;
+      }
+    }
+  }
+
+  if (stack.length > 0) {
+    return "Unclosed bracket detected in code.";
+  }
+
+  return null;
+}
+
+function collectSyntaxSignals(code: string, language?: string | null): string[] {
+  const syntaxSignals: string[] = [];
+  const bracketMismatch = detectBracketMismatch(code);
+  if (bracketMismatch) {
+    syntaxSignals.push(bracketMismatch);
+  }
+
+  const trimmed = code.trim();
+  if (!trimmed) {
+    return syntaxSignals;
+  }
+
+  const lang = (language || detectLanguage(code)).toLowerCase();
+  const jsLike = lang.includes("javascript") || lang.includes("react") || lang.includes("typescript");
+  const isLikelyModuleOrTSX = /\bimport\b|\bexport\b|<[A-Za-z][^>]*>/.test(code);
+
+  if (jsLike && !isLikelyModuleOrTSX) {
+    try {
+      new Function(code);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Invalid JavaScript syntax.";
+      syntaxSignals.push(`JavaScript parser error: ${message}`);
+    }
+  }
+
+  const lastMeaningfulLine = code
+    .split("\n")
+    .map(line => line.trim())
+    .filter(Boolean)
+    .at(-1);
+
+  if (lastMeaningfulLine) {
+    if (/\b(return|throw)\b\s*$/.test(lastMeaningfulLine)) {
+      syntaxSignals.push("Incomplete statement detected near the end of the snippet.");
+    }
+    if (/[=+\-*/%?:.]\s*$/.test(lastMeaningfulLine)) {
+      syntaxSignals.push("Expression appears to end abruptly at the last line.");
+    }
+  }
+
+  return Array.from(new Set(syntaxSignals));
+}
+
+function hasModelSyntaxIssue(issues: Issue[], summary: string): boolean {
+  const syntaxRegex = /syntax|parse|compil|unexpected token|missing|invalid|non-functional|unterminated|incomplete/i;
+  if (syntaxRegex.test(summary)) return true;
+  return issues.some(issue => syntaxRegex.test(issue.title) || syntaxRegex.test(issue.description));
+}
+
+function normalizeReviewResult(raw: RawReviewResult, code: string, fallbackLanguage?: string | null): ReviewResult {
+  const detectedLanguage = fallbackLanguage || detectLanguage(code);
+  const language = typeof raw.language === "string" && raw.language.trim() ? raw.language.trim() : detectedLanguage;
+
+  const sanitizedIssues: Issue[] = Array.isArray(raw.issues)
+    ? raw.issues
+        .map((issue): Issue | null => {
+          if (!issue || typeof issue !== "object") return null;
+          const severity = issue.severity;
+          const normalizedSeverity: Issue["severity"] =
+            severity === "High" || severity === "Medium" || severity === "Low" || severity === "Info"
+              ? severity
+              : "Info";
+          const title = typeof issue.title === "string" && issue.title.trim() ? issue.title.trim() : "Review finding";
+          const description =
+            typeof issue.description === "string" && issue.description.trim()
+              ? issue.description.trim()
+              : "Potential issue detected during analysis.";
+          const line = typeof issue.line === "number" && Number.isFinite(issue.line) ? Math.max(1, Math.round(issue.line)) : null;
+          return { severity: normalizedSeverity, title, description, line };
+        })
+        .filter((issue): issue is Issue => issue !== null)
+    : [];
+
+  let summary =
+    typeof raw.summary === "string" && raw.summary.trim()
+      ? raw.summary.trim()
+      : "Analysis completed with normalized scoring and local validation safeguards.";
+
+  const recommendations = Array.isArray(raw.recommendations)
+    ? raw.recommendations.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+    : [];
+
+  const syntaxSignals = collectSyntaxSignals(code, language);
+  const syntaxFromModel = hasModelSyntaxIssue(sanitizedIssues, summary);
+  let score = clampScore(raw.score);
+
+  if (syntaxSignals.length > 0 || syntaxFromModel) {
+    const syntaxIssueText = syntaxSignals[0] || "Syntax or parse failures detected in this snippet.";
+    const hasExistingSyntaxIssue = sanitizedIssues.some(issue => /syntax|parse|compil|unexpected token|incomplete/i.test(issue.title));
+
+    if (!hasExistingSyntaxIssue) {
+      sanitizedIssues.unshift({
+        severity: "High",
+        title: "Critical syntax failure",
+        description: syntaxIssueText,
+        line: null,
+      });
+    }
+
+    score = Math.min(score, 30);
+    if (!/syntax|parse|compil|invalid/i.test(summary)) {
+      summary = `Critical syntax problems were detected. ${summary}`;
+    }
+  }
+
+  return {
+    language,
+    summary,
+    score,
+    issues: sanitizedIssues,
+    recommendations,
+    source: "groq-api",
+  };
+}
+
 function buildFallbackReview(code: string, language?: string | null): ReviewResult {
   const issues: Issue[] = [];
 
@@ -280,7 +433,8 @@ function buildFallbackReview(code: string, language?: string | null): ReviewResu
       summary: "The provided snippet is too short to be analyzed effectively.",
       score: 0,
       issues: [{ severity: "High", title: "Empty or invalid input", description: "Please provide valid source code for analysis.", line: null }],
-      recommendations: ["Ensure you paste a complete code block."]
+      recommendations: ["Ensure you paste a complete code block."],
+      source: "fallback-local",
     };
   }
 
@@ -326,17 +480,32 @@ function buildFallbackReview(code: string, language?: string | null): ReviewResu
     });
   }
 
-  // Fallback base score is lower (60) if it looks like code, otherwise much lower
+  const syntaxSignals = collectSyntaxSignals(code, language);
+  if (syntaxSignals.length > 0) {
+    issues.push({
+      severity: "High",
+      title: "Critical syntax failure",
+      description: syntaxSignals[0],
+      line: null,
+    });
+  }
+
+  // Fallback base score is lower (70) if it looks like code, otherwise much lower
   const baseScore = seemsLikeGarbage ? 20 : 70;
-  const score = Math.max(0, baseScore - issues.length * 15);
+  let score = Math.max(0, baseScore - issues.length * 15);
+  if (syntaxSignals.length > 0) {
+    score = Math.min(score, 30);
+  }
   const detectedLanguage = language || detectLanguage(code);
 
   return {
     language: detectedLanguage,
     summary:
-      issues.length > 0
-        ? "Live fallback analysis detected security or structural risks. Manual review is highly recommended."
-        : "Live fallback analysis was used. No obvious high-risk security patterns were detected, but logic verification was limited.",
+      syntaxSignals.length > 0
+        ? "Critical syntax failures were detected in the snippet, so the review score was capped. Manual correction is required before security confidence can be trusted."
+        : issues.length > 0
+          ? "Live fallback analysis detected security or structural risks. Manual review is highly recommended."
+          : "Live fallback analysis was used. No obvious high-risk security patterns were detected, but logic verification was limited.",
     score,
     issues,
     recommendations: [
@@ -344,6 +513,7 @@ function buildFallbackReview(code: string, language?: string | null): ReviewResu
       "Store secrets in environment variables or a secrets manager.",
       "Add input validation and output encoding on untrusted data paths.",
     ],
+    source: "fallback-local",
   };
 }
 
@@ -441,7 +611,7 @@ Return ONLY the raw JSON object. No commentary outside the JSON.`;
         if (content) {
           try {
             const cleaned = content.replace(/```(?:json)?/gi, "").replace(/```/g, "").trim();
-            setResult(JSON.parse(cleaned));
+            setResult(normalizeReviewResult(JSON.parse(cleaned), code, detectedLang));
           } catch {
             setResult(buildFallbackReview(code, detectedLang));
           }
